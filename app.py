@@ -401,14 +401,14 @@ with tab1:
                 
             elif t_type == "url":
                 st.subheader("Triaging URL")
-                with st.spinner("Unshortening URL..."):
+                with st.status("Analyzing Target Data...", expanded=True) as status:
+                    st.write("🔗 Unshortening URL...")
                     final_url = unshorten_url(target)
-                st.write(f"**Original URL:** {target}")
-                st.write(f"**Final Destination:** {final_url}")
-                
-                if urlscan_key:
-                    st.markdown("### 📸 urlscan.io Snapshot")
-                    with st.spinner("Submitting to urlscan.io..."):
+                    st.write(f"**Original:** {target}")
+                    st.write(f"**Destination:** {final_url}")
+                    
+                    if urlscan_key:
+                        st.write("📸 Submitting to urlscan.io...")
                         scan_res = scan_urlscan_io(final_url, urlscan_key)
                         if scan_res.get("error"):
                             st.error(f"Urlscan Error: {scan_res['error']}")
@@ -418,7 +418,11 @@ with tab1:
                             time.sleep(10)
                             st.image(f"https://urlscan.io/screenshots/{scan_res['uuid']}.png", 
                                      caption="Visual Sandbox Output", use_container_width=True)
-                vt_data = query_virustotal(final_url, "url", vt_key)
+                    
+                    st.write("🛡️ Cross-referencing VirusTotal...")
+                    vt_data = query_virustotal(final_url, "url", vt_key)
+                    status.update(label="Analysis Complete", state="complete", expanded=False)
+                
                 render_virustotal_results(vt_data)
                 
             elif t_type == "hash":
