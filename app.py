@@ -17,7 +17,7 @@ from fpdf import FPDF
 # ==============================================================================
 st.set_page_config(page_title="SOC Triage & Forensics Tool", layout="wide")
 
-APP_PASSWORD = "socadmin123"
+APP_PASSWORD = st.secrets["APP_PASSWORD"]
 
 if "authenticated" not in st.session_state:
     st.session_state["authenticated"] = False
@@ -197,30 +197,22 @@ def query_virustotal(target, target_type, api_key):
         return {"Malicious": "Error", "Suspicious": "Error", "Vendors": str(e), "Detections": []}
 
 def render_virustotal_results(vt_data):
-    st.markdown("### VirusTotal Results")
-    col1, col2 = st.columns(2)
-    col1.metric("Malicious", vt_data["Malicious"])
-    col2.metric("Suspicious", vt_data["Suspicious"])
-    
-    detections = vt_data.get("Detections", [])
-    if detections:
-        st.error(f"Flagged as suspicious/malicious by {len(detections)} vendor(s)")
-        with st.expander("🔎 View Vendor Detection Breakdown", expanded=True):
-            det_df = pd.DataFrame(detections)
-            st.dataframe(
-                det_df,
-                use_container_width=True,
-                hide_index=True,
-                column_config={
-                    "Security Vendor": st.column_config.TextColumn("Security Vendor", width="medium"),
-                    "Verdict": st.column_config.TextColumn("Verdict", width="small"),
-                    "Detection": st.column_config.TextColumn("Detection / Signature", width="large")
-                }
-            )
-    elif vt_data["Malicious"] in ["Error", "Rate Limited"]:
-        st.warning(vt_data["Vendors"])
-    else:
-        st.success("Clean or unrated across engines")
+    with st.container(border=True):
+        st.markdown("### VirusTotal Results")
+        col1, col2 = st.columns(2)
+        col1.metric("Malicious", vt_data["Malicious"])
+        col2.metric("Suspicious", vt_data["Suspicious"])
+        
+        detections = vt_data.get("Detections", [])
+        if detections:
+            st.markdown(f'<span style="background-color:#ff4b4b; color:white; padding:4px 8px; border-radius:4px; font-weight:bold;">🚨 Flagged by {len(detections)} vendor(s)</span><br><br>', unsafe_allow_html=True)
+            with st.expander("🔎 View Vendor Detection Breakdown", expanded=True):
+                det_df = pd.DataFrame(detections)
+                st.dataframe(det_df, use_container_width=True, hide_index=True)
+        elif vt_data["Malicious"] in ["Error", "Rate Limited"]:
+            st.warning(vt_data["Vendors"])
+        else:
+            st.markdown('<span style="background-color:#00c853; color:white; padding:4px 8px; border-radius:4px; font-weight:bold;">✅ Clean across all engines</span><br><br>', unsafe_allow_html=True)
 
 def scan_urlscan_io(url, api_key):
     try:
