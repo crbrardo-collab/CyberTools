@@ -319,11 +319,11 @@ if 'report_data' not in st.session_state:
 # ==============================================================================
 st.title("🛡️ SOC Triage & Forensics Tool")
 
-# Sidebar Configuration
-st.sidebar.header("API Configuration")
-vt_key = st.sidebar.text_input("VirusTotal API Key", type="password")
-abuse_key = st.sidebar.text_input("AbuseIPDB API Key", type="password")
-urlscan_key = st.sidebar.text_input("urlscan.io API Key", type="password")
+# Hidden API Configuration pulled directly from Streamlit Secrets
+vt_key = st.secrets.get("VT_API_KEY", "")
+abuse_key = st.secrets.get("ABUSE_API_KEY", "")
+urlscan_key = st.secrets.get("URLSCAN_API_KEY", "")
+otx_key = st.secrets.get("OTX_API_KEY", "")
 
 if st.sidebar.button("Log Out"):
     st.session_state["authenticated"] = False
