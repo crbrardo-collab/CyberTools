@@ -309,11 +309,36 @@ def generate_pdf(report_data, evtx_df):
     pdf.set_auto_page_break(auto=True, margin=15)
     
     # 1. Executive Summary
-    pdf.set_font('Helvetica', 'B', 12)
-    pdf.cell(0, 8, '1. Executive Summary', ln=True)
+   pdf.set_font('Helvetica', 'B', 12)
+    pdf.cell(0, 8, '2. Direct Indicator Telemetry & Threat Context', ln=True)
     pdf.set_font('Helvetica', '', 10)
-    pdf.cell(0, 6, f"Generated: {datetime.now().strftime('%Y-%m-%d %H:%M:%S PHT')}", ln=True)
-    pdf.multi_cell(0, 6, "Automated forensic summary compiling network intelligence, endpoint log telemetry, and MITRE ATT&CK mappings to guide triage and response decisions.")
+    
+    if not report_data["single_iocs"]:
+        pdf.cell(0, 6, "No direct indicators were queried.", ln=True)
+    else:
+        for item in report_data["single_iocs"]:
+            pdf.set_font('Helvetica', 'B', 10)
+            
+            # Safely truncate massive URLs or Hashes so FPDF doesn't crash
+            safe_indicator = item['Indicator']
+            if len(safe_indicator) > 70:
+                safe_indicator = safe_indicator[:67] + "..."
+                
+            pdf.multi_cell(0, 6, f"Target: {safe_indicator} ({item['Type']})")
+            pdf.set_font('Helvetica', '', 10)
+            
+            vt_hits = item.get('Malicious', 'N/A')
+            otx_count = item.get('OTX_Pulses', 0)
+            otx_camps = item.get('OTX_Campaigns', 'None')
+            
+            pdf.multi_cell(0, 6, f"VirusTotal Malicious Detections: {vt_hits}\nAlienVault OTX Associated Campaigns: {otx_count}")
+            if otx_count > 0 and otx_camps != "None":
+                pdf.multi_cell(0, 6, f"Top Threat Campaigns: {otx_camps}")
+            
+            pdf.set_text_color(120, 120, 120)
+            pdf.cell(0, 6, f"Queried: {item['Timestamp']}", ln=True)
+            pdf.set_text_color(0, 0, 0)
+            pdf.ln(2)
     pdf.ln(4)
 
     # 2. Direct Indicator Telemetry & Threat Intel
