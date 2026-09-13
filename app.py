@@ -236,13 +236,15 @@ def query_alienvault_otx(indicator, target_type, api_key):
         headers = {"X-OTX-API-KEY": api_key}
         base_url = f"https://otx.alienvault.com/api/v1/indicators/{otx_type}/{indicator}"
         
-        gen_res = requests.get(f"{base_url}/general", headers=headers, timeout=10)
+        # INCREASED TIMEOUT TO 30 SECONDS
+        gen_res = requests.get(f"{base_url}/general", headers=headers, timeout=30)
         gen_res.raise_for_status()
         gen_data = gen_res.json()
         
         pdns_data = {}
         if otx_type in ["IPv4", "domain"]:
-            pdns_res = requests.get(f"{base_url}/passive_dns", headers=headers, timeout=10)
+            # INCREASED TIMEOUT TO 30 SECONDS
+            pdns_res = requests.get(f"{base_url}/passive_dns", headers=headers, timeout=30)
             if pdns_res.status_code == 200:
                 pdns_data = pdns_res.json()
 
