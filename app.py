@@ -292,6 +292,17 @@ def render_otx_results(otx_data):
 # ==============================================================================
 # 5. PDF REPORT GENERATOR
 # ==============================================================================
+class PDFReport(FPDF):
+    def header(self):
+        self.set_font('Helvetica', 'B', 15)
+        self.cell(0, 10, 'SOC Incident Triage & Investigation Report', border=False, align='C')
+        self.ln(12)
+
+    def footer(self):
+        self.set_y(-15)
+        self.set_font('Helvetica', 'I', 8)
+        self.cell(0, 10, f'Page {self.page_no()}', align='C')
+
 def generate_pdf(report_data, evtx_df):
     pdf = PDFReport()
     pdf.add_page()
@@ -382,4 +393,340 @@ def generate_pdf(report_data, evtx_df):
         "- EDR Sweep: Hunt across all endpoints for hashes and artifacts discovered during this investigation."
     )
     pdf.multi_cell(0, 6, recs)
-    return pdf.output()
+    return pdf.output()  
+# ==============================================================================
+# 6. SESSION STATE INITIALIZATION
+# ==============================================================================
+if 'evtx_df' not in st.session_state:
+    st.session_state.evtx_df = None
+if 'report_data' not in st.session_state:
+    st.session_state.report_data = {"single_iocs": [], "bulk_summary": None}
+
+# ==============================================================================
+# 7. USER INTERFACE & NAVIGATION
+# ==============================================================================
+st.title("🛡️ SOC Triage & Tool")
+
+# Hidden API Configuration pulled directly from Streamlit Secrets
+vt_key = st.secrets.get("VT_API_KEY", "")
+abuse_key = st.secrets.get("ABUSE_API_KEY", "")
+urlscan_key = st.secrets.get("URLSCAN_API_KEY", "")
+otx_key = st.secrets.get("OTX_API_KEY", "")
+
+with st.sidebar:
+    st.image("https://upload.wikimedia.org/wikipedia/commons/thumb/c/c2/GitHub_Invertocat_Logo.svg/120px-GitHub_Invertocat_Logo.svg.png", width=50)
+    st.markdown("### SOC Tool")
+    st.caption("Test Version")
+    st.divider()
+    
+    # Push the logout button to the bottom using empty space
+    for _ in range(15):
+        st.write("")
+        
+    if st.button("🚪 Log Out", use_container_width=True):
+        st.session_state["authenticated"] = False
+        st.rerun()
+
+tab1, tab2, tab3, tab4 = st.tabs([
+    "🌐 Single IOC Intel", 
+    "📂 EVTX Forensics", 
+    "🗂️ Bulk IOC Analysis", 
+    "📄 Incident Report"
+])
+
+# --- TAB 1: SINGLE IOC INTEL & FILE HASH GENERATOR ---
+with tab1:
+    st.subheader("Single Indicator Triage & File Hashing")
+    
+    # File Hash Generator Section
+    with st.expander("📁 File Hash Generator (Upload file to extract MD5, SHA1, SHA256)"):
+        hash_file = st.file_uploader("Select File to Hash", type=None, key="hash_uploader")
+        if hash_file is not None:
+            file_bytes = hash_file.getvalue()
+            hashes = calculate_file_hashes(file_bytes)
+            st.toast(f"Calculated hashes for {hash_file.name}", icon="✅")
+            
+            col_h1, col_h2, col_h3 = st.columns(3)
+            col_h1.text_input("MD5 Hash", value=hashes["MD5"], key="h_md5")
+            col_h2.text_input("SHA1 Hash", value=hashes["SHA1"], key="h_sha1")
+            col_h3.text_input("SHA256 Hash", value=hashes["SHA256"], key="h_sha256")
+            
+            if st.button("Use SHA256 for Analysis Below"):
+                st.session_state["prefilled_target"] = hashes["SHA256"]
+                st.rerun()
+
+    # Target Triage Input
+    default_target = st.session_state.pop("prefilled_target", "")
+    target = st.text_input("Enter IP Address, Domain, URL, or File Hash", value=default_target)
+    
+    if st.button("Analyze Target"):
+        if not target.strip():
+            st.warning("Please supply a valid target.")
+        elif not vt_key:
+            st.error("VirusTotal API key is required in the sidebar.")
+        else:
+            t_type = identify_input(target)
+            vt_data = None
+            
+            if t_type == "ip":
+                st.subheader(f"Triaging IP: {target}")
+                
+                col_net, col_abuse = st.columns(2)
+                
+                with col_net:
+                    with st.container(border=True):
+                        st.markdown("### 🌐 DNS / Network Info")
+                        try:
+                            hostname, _, _ = socket.gethostbyaddr(target)
+                            st.write(f"**Reverse DNS (PTR):** `{hostname}`")
+                        except Exception:
+                            st.write("**Reverse DNS (PTR):** `No record found`")
+                
+                with col_abuse:
+                    if abuse_key:
+                        with st.container(border=True):
+                            st.markdown("### 🚨 AbuseIPDB")
+                            ab_data = query_abuseipdb(target, abuse_key)
+                            st.write(f"**ISP:** `{ab_data['ISP']}`")
+                            # Add a visual progress bar for the confidence score
+                            st.progress(ab_data['Score'] / 100, text=f"Confidence Score: {ab_data['Score']}%")
+                
+                vt_data = query_virustotal(target, "ip", vt_key)
+                render_virustotal_results(vt_data)
+                
+            elif t_type == "domain":
+                st.subheader(f"Triaging Domain: {target}")
+                st.markdown("### 🌐 DNS / Network Info")
+                try:
+                    resolved_ip = socket.gethostbyname(target)
+                    st.write(f"**Resolved IP (A Record):** {resolved_ip}")
+                except Exception:
+                    st.write("**Resolved IP:** Could not resolve domain")
+                    
+                vt_data = query_virustotal(target, "domain", vt_key)
+                render_virustotal_results(vt_data)
+                
+            elif t_type == "url":
+                st.subheader("Triaging URL")
+                with st.status("Analyzing Target Data...", expanded=True) as status:
+                    st.write("🔗 Unshortening URL...")
+                    final_url = unshorten_url(target)
+                    st.write(f"**Original:** {target}")
+                    st.write(f"**Destination:** {final_url}")
+                    
+                    if urlscan_key:
+                        st.write("📸 Submitting to urlscan.io...")
+                        scan_res = scan_urlscan_io(final_url, urlscan_key)
+                        if scan_res.get("error"):
+                            st.error(f"Urlscan Error: {scan_res['error']}")
+                        else:
+                            st.success("Scan submitted successfully.")
+                            st.markdown(f"[🔗 View Analysis Report]({scan_res['report']})")
+                            time.sleep(10)
+                            st.image(f"https://urlscan.io/screenshots/{scan_res['uuid']}.png", 
+                                     caption="Visual Sandbox Output", use_container_width=True)
+                    
+                    st.write("🛡️ Cross-referencing VirusTotal...")
+                    vt_data = query_virustotal(final_url, "url", vt_key)
+                    status.update(label="Analysis Complete", state="complete", expanded=False)
+                
+                render_virustotal_results(vt_data)
+                
+            elif t_type == "hash":
+                st.subheader(f"Triaging Hash: {target}")
+                vt_data = query_virustotal(target, "hash", vt_key)
+                render_virustotal_results(vt_data)
+            else:
+                st.error("Invalid indicator format.")
+
+            if vt_data:
+                st.session_state.report_data["single_iocs"].append({
+                    "Indicator": target,
+                    "Type": t_type.upper(),
+                    "Malicious": vt_data.get("Malicious", "N/A"),
+                    "Timestamp": datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+                })
+            # --- ALIENVAULT OTX INTEGRATION ---
+            if otx_key and t_type != "unknown":
+                st.write("---")
+                # Use the unshortened URL if it's a URL, otherwise use the standard target
+                otx_target = final_url if (t_type == "url" and 'final_url' in locals()) else target 
+                with st.spinner("Retrieving AlienVault OTX Context..."):
+                    otx_data = query_alienvault_otx(otx_target, t_type, otx_key)
+                    render_otx_results(otx_data)
+
+                    # --- 2. APPEND TO REPORT STATE ---
+            if vt_data:
+                # Safely extract OTX data if the API returned results
+                otx_pulses = 0
+                otx_camps = []
+                if 'otx_data' in locals() and otx_data and not otx_data.get("error"):
+                    otx_pulses = otx_data.get("pulse_count", 0)
+                    otx_camps = [p["name"] for p in otx_data.get("pulses", [])[:3]] # Grab top 3 campaigns
+
+                st.session_state.report_data["single_iocs"].append({
+                    "Indicator": target,
+                    "Type": t_type.upper(),
+                    "Malicious": vt_data.get("Malicious", "N/A"),
+                    "OTX_Pulses": otx_pulses,
+                    "OTX_Campaigns": ", ".join(otx_camps) if otx_camps else "None",
+                    "Timestamp": datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+                })
+
+# --- TAB 2: EVTX FORENSICS ---
+with tab2:
+    col1, col2 = st.columns([1, 2])
+    with col1:
+        uploaded_file = st.file_uploader("Upload Windows Event Log (.evtx)", type=["evtx"])
+    with col2:
+        selected_eids = st.multiselect(
+            "Filter by Event IDs (Leave blank to process all)",
+            options=list(COMMON_EVENT_DESCRIPTIONS.keys()),
+            format_func=lambda x: f"{x} - {COMMON_EVENT_DESCRIPTIONS[x]}"
+        )
+        
+    if uploaded_file is not None and st.button("Parse EVTX"):
+        with st.spinner("Parsing binary event records..."):
+            try:
+                with tempfile.NamedTemporaryFile(delete=False, suffix=".evtx") as tmp_file:
+                    tmp_file.write(uploaded_file.getbuffer())
+                    tmp_file_path = tmp_file.name
+
+                parser = PyEvtxParser(tmp_file_path)
+                events = []
+                for record in parser.records_json():
+                    data = json.loads(record['data'])
+                    sys_data = data.get('Event', {}).get('System', {})
+                    ev_id = sys_data.get('EventID', 'N/A')
+                    if isinstance(ev_id, dict):
+                        ev_id = ev_id.get('#text', ev_id)
+                    ev_id_str = str(ev_id).strip()
+
+                    if selected_eids and ev_id_str not in selected_eids:
+                        continue
+
+                    raw_ts = sys_data.get('TimeCreated', {})
+                    raw_ts = raw_ts.get('#attributes', {}).get('SystemTime', 'N/A') if isinstance(raw_ts, dict) else "N/A"
+                    prov_data = sys_data.get('Provider', {})
+                    provider = prov_data.get('#attributes', {}).get('Name', 'N/A') if isinstance(prov_data, dict) else "N/A"
+
+                    events.append({
+                        "Timestamp (PHT)": convert_to_pht(raw_ts),
+                        "Event ID": ev_id_str,
+                        "Provider": str(provider),
+                        "Description": COMMON_EVENT_DESCRIPTIONS.get(ev_id_str, "Standard System/Application Event"),
+                        "MITRE ATT&CK": MITRE_MAPPING.get(ev_id_str, "None"),
+                        "Forensic Details": extract_event_details(data.get('Event', {}).get('EventData', {}))
+                    })
+
+                events.sort(key=lambda x: x['Timestamp (PHT)'])
+                st.session_state.evtx_df = pd.DataFrame(events)
+                os.remove(tmp_file_path)
+                st.success(f"Parsed {len(st.session_state.evtx_df)} records.")
+            except Exception as e:
+                st.error(f"Error parsing EVTX: {e}")
+
+    if st.session_state.evtx_df is not None:
+        search_kw = st.text_input("🔍 Keyword Search (Process name, user, IP, PID...)")
+        display_df = st.session_state.evtx_df
+
+        if search_kw:
+            mask = display_df.apply(lambda row: row.astype(str).str.contains(search_kw, case=False).any(), axis=1)
+            display_df = display_df[mask]
+
+        st.dataframe(
+            display_df,
+            use_container_width=True,
+            hide_index=True,
+            column_config={
+                "Timestamp (PHT)": st.column_config.TextColumn("Timestamp (PHT)", width="medium"),
+                "Event ID": st.column_config.TextColumn("Event ID", width="small"),
+                "Provider": st.column_config.TextColumn("Provider", width="medium"),
+                "Description": st.column_config.TextColumn("Description", width="medium"),
+                "MITRE ATT&CK": st.column_config.TextColumn("MITRE ATT&CK", width="medium"),
+                "Forensic Details": st.column_config.TextColumn("Forensic Details", width="large"),
+            }
+        )
+        csv_data = display_df.to_csv(index=False).encode('utf-8')
+        st.download_button("⬇️ Download Filtered View (.csv)", data=csv_data, 
+                           file_name="evtx_forensic_timeline.csv", mime="text/csv")
+
+# --- TAB 3: BULK IOC ANALYSIS ---
+with tab3:
+    st.info("Public VirusTotal API rate limit: 4 requests per minute.")
+    bulk_input = st.text_area("Paste indicators (one per line: IPs, Domains, URLs, Hashes)")
+    
+    if st.button("Run Bulk Analysis"):
+        if not vt_key:
+            st.error("VirusTotal API Key is required.")
+        elif not bulk_input.strip():
+            st.warning("Provide at least one indicator.")
+        else:
+            iocs = [line.strip() for line in bulk_input.split('\n') if line.strip()]
+            results = []
+            malicious_count = 0
+            prog = st.progress(0)
+            status = st.empty()
+            
+            for index, ioc in enumerate(iocs):
+                status.text(f"Processing ({index + 1}/{len(iocs)}): {ioc}")
+                ioc_type = identify_input(ioc)
+                vt_data = query_virustotal(ioc, ioc_type, vt_key)
+                
+                mal_val = vt_data.get("Malicious", 0)
+                if str(mal_val).isdigit() and int(mal_val) > 0:
+                    malicious_count += 1
+
+                results.append({
+                    "Indicator": ioc,
+                    "Type": ioc_type.upper(),
+                    "Malicious": mal_val,
+                    "Suspicious": vt_data.get("Suspicious", "-"),
+                    "Details": vt_data.get("Vendors", "-")
+                })
+                prog.progress((index + 1) / len(iocs))
+                if len(iocs) > 1 and index < len(iocs) - 1:
+                    time.sleep(2)
+                    
+            status.text("Bulk Analysis Completed.")
+            st.session_state.report_data["bulk_summary"] = {
+                "total_scanned": len(iocs),
+                "malicious_found": malicious_count
+            }
+            bulk_df = pd.DataFrame(results)
+            st.dataframe(
+                bulk_df,
+                use_container_width=True,
+                hide_index=True,
+                column_config={
+                    "Indicator": st.column_config.TextColumn("Target IOC", width="medium"),
+                    "Type": st.column_config.TextColumn("Type", width="small"),
+                    "Malicious": st.column_config.NumberColumn(
+                        "Malicious Hits", 
+                        help="Number of security vendors flagging this IOC",
+                        format="%d 🚨"
+                    ),
+                    "Suspicious": st.column_config.NumberColumn("Suspicious", format="%d ⚠️"),
+                }
+            )
+            st.download_button("⬇️ Download Bulk Report (.csv)", data=bulk_df.to_csv(index=False).encode('utf-8'),
+                               file_name="bulk_ioc_results.csv", mime="text/csv")
+
+# --- TAB 4: INCIDENT REPORT GENERATION ---
+with tab4:
+    st.subheader("Executive Incident Report Generation")
+    st.write("Synthesize data from all investigation modules into a unified PDF brief.")
+    
+    if st.button("Generate Formal PDF Report"):
+        with st.spinner("Generating document..."):
+            try:
+                pdf_bytes = generate_pdf(st.session_state.report_data, st.session_state.evtx_df)
+                st.download_button(
+                    label="⬇️ Download Incident Report (.pdf)",
+                    data=bytes(pdf_bytes),
+                    file_name=f"Incident_Report_{datetime.now().strftime('%Y%m%d_%H%M')}.pdf",
+                    mime="application/pdf"
+                )
+                st.success("Report successfully generated.")
+            except Exception as e:
+                st.error(f"Failed to generate report: {e}")
