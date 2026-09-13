@@ -226,6 +226,57 @@ def scan_urlscan_io(url, api_key):
     except Exception as e:
         return {"uuid": None, "report": None, "error": str(e)}
 
+def query_alienvault_otx(indicator, target_type, api_key):
+    try:
+        otx_type_map = {"ip": "IPv4", "domain": "domain", "url": "url", "hash": "file"}
+        otx_type = otx_type_map.get(target_type)
+        if not otx_type:
+            return {"error": "Unsupported OTX type"}
+
+        headers = {"X-OTX-API-KEY": api_key}
+        base_url = f"https://otx.alienvault.com/api/v1/indicators/{otx_type}/{indicator}"
+        
+        gen_res = requests.get(f"{base_url}/general", headers=headers, timeout=10)
+        gen_res.raise_for_status()
+        gen_data = gen_res.json()
+        
+        pdns_data = {}
+        if otx_type in ["IPv4", "domain"]:
+            pdns_res = requests.get(f"{base_url}/passive_dns", headers=headers, timeout=10)
+            if pdns_res.status_code == 200:
+                pdns_data = pdns_res.json()
+
+        pulses = gen_data.get("pulse_info", {}).get("pulses", [])
+        passive_dns = pdns_data.get("passive_dns", [])
+        
+        return {
+            "pulse_count": gen_data.get("pulse_info", {}).get("count", 0),
+            "pulses": [{"name": p.get("name"), "author": p.get("author_name"), "tags": p.get("tags", [])} for p in pulses],
+            "passive_dns": [{"hostname": r.get("hostname"), "address": r.get("address"), "last": r.get("last")} for r in passive_dns[:15]], 
+            "error": None
+        }
+    except Exception as e:
+        return {"error": str(e)}
+
+def render_otx_results(otx_data):
+    if not otx_data or otx_data.get("error"):
+        st.warning(f"AlienVault OTX Warning: {otx_data.get('error', 'No data returned')}")
+        return
+
+    with st.container(border=True):
+        st.markdown("### 👽 AlienVault OTX (Threat Context)")
+        st.metric("Associated APT Pulses (Campaigns)", otx_data.get("pulse_count", 0))
+        
+        if otx_data.get("pulses"):
+            st.markdown("**Recent Threat Campaigns:**")
+            for p in otx_data["pulses"][:5]: 
+                tags = ", ".join(p["tags"]) if p["tags"] else "None"
+                st.write(f"- **{p['name']}** (by *{p['author']}*) | Tags: `{tags}`")
+        
+        if otx_data.get("passive_dns"):
+            with st.expander("🌍 View Passive DNS History", expanded=False):
+                st.dataframe(pd.DataFrame(otx_data["passive_dns"]), use_container_width=True, hide_index=True)
+
 # ==============================================================================
 # 5. PDF REPORT GENERATOR
 # ==============================================================================
@@ -439,6 +490,14 @@ with tab1:
                     "Malicious": vt_data.get("Malicious", "N/A"),
                     "Timestamp": datetime.now().strftime("%Y-%m-%d %H:%M:%S")
                 })
+            # --- ALIENVAULT OTX INTEGRATION ---
+            if otx_key and t_type != "unknown":
+                st.write("---")
+                # Use the unshortened URL if it's a URL, otherwise use the standard target
+                otx_target = final_url if (t_type == "url" and 'final_url' in locals()) else target 
+                with st.spinner("Retrieving AlienVault OTX Context..."):
+                    otx_data = query_alienvault_otx(otx_target, t_type, otx_key)
+                    render_otx_results(otx_data)
 
 # --- TAB 2: EVTX FORENSICS ---
 with tab2:
