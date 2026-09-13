@@ -388,9 +388,19 @@ abuse_key = st.secrets.get("ABUSE_API_KEY", "")
 urlscan_key = st.secrets.get("URLSCAN_API_KEY", "")
 otx_key = st.secrets.get("OTX_API_KEY", "")
 
-if st.sidebar.button("Log Out"):
-    st.session_state["authenticated"] = False
-    st.rerun()
+with st.sidebar:
+    st.image("https://upload.wikimedia.org/wikipedia/commons/thumb/c/c2/GitHub_Invertocat_Logo.svg/120px-GitHub_Invertocat_Logo.svg.png", width=50)
+    st.markdown("### SOC Forensics")
+    st.caption("v1.2.0 | Production")
+    st.divider()
+    
+    # Push the logout button to the bottom using empty space
+    for _ in range(15):
+        st.write("")
+        
+    if st.button("🚪 Log Out", use_container_width=True):
+        st.session_state["authenticated"] = False
+        st.rerun()
 
 tab1, tab2, tab3, tab4 = st.tabs([
     "🌐 Single IOC Intel", 
@@ -409,7 +419,7 @@ with tab1:
         if hash_file is not None:
             file_bytes = hash_file.getvalue()
             hashes = calculate_file_hashes(file_bytes)
-            st.success(f"Successfully calculated hashes for: **{hash_file.name}**")
+            st.toast(f"Calculated hashes for {hash_file.name}", icon="✅")
             
             col_h1, col_h2, col_h3 = st.columns(3)
             col_h1.text_input("MD5 Hash", value=hashes["MD5"], key="h_md5")
@@ -435,17 +445,26 @@ with tab1:
             
             if t_type == "ip":
                 st.subheader(f"Triaging IP: {target}")
-                st.markdown("### 🌐 DNS / Network Info")
-                try:
-                    hostname, _, _ = socket.gethostbyaddr(target)
-                    st.write(f"**Reverse DNS (PTR):** {hostname}")
-                except Exception:
-                    st.write("**Reverse DNS (PTR):** No record found")
                 
-                if abuse_key:
-                    ab_data = query_abuseipdb(target, abuse_key)
-                    st.markdown("### AbuseIPDB")
-                    st.write(f"**ISP:** {ab_data['ISP']} | **Confidence Score:** {ab_data['Score']}%")
+                col_net, col_abuse = st.columns(2)
+                
+                with col_net:
+                    with st.container(border=True):
+                        st.markdown("### 🌐 DNS / Network Info")
+                        try:
+                            hostname, _, _ = socket.gethostbyaddr(target)
+                            st.write(f"**Reverse DNS (PTR):** `{hostname}`")
+                        except Exception:
+                            st.write("**Reverse DNS (PTR):** `No record found`")
+                
+                with col_abuse:
+                    if abuse_key:
+                        with st.container(border=True):
+                            st.markdown("### 🚨 AbuseIPDB")
+                            ab_data = query_abuseipdb(target, abuse_key)
+                            st.write(f"**ISP:** `{ab_data['ISP']}`")
+                            # Add a visual progress bar for the confidence score
+                            st.progress(ab_data['Score'] / 100, text=f"Confidence Score: {ab_data['Score']}%")
                 
                 vt_data = query_virustotal(target, "ip", vt_key)
                 render_virustotal_results(vt_data)
@@ -632,7 +651,21 @@ with tab3:
                 "malicious_found": malicious_count
             }
             bulk_df = pd.DataFrame(results)
-            st.dataframe(bulk_df, use_container_width=True)
+            st.dataframe(
+                bulk_df,
+                use_container_width=True,
+                hide_index=True,
+                column_config={
+                    "Indicator": st.column_config.TextColumn("Target IOC", width="medium"),
+                    "Type": st.column_config.TextColumn("Type", width="small"),
+                    "Malicious": st.column_config.NumberColumn(
+                        "Malicious Hits", 
+                        help="Number of security vendors flagging this IOC",
+                        format="%d 🚨"
+                    ),
+                    "Suspicious": st.column_config.NumberColumn("Suspicious", format="%d ⚠️"),
+                }
+            )
             st.download_button("⬇️ Download Bulk Report (.csv)", data=bulk_df.to_csv(index=False).encode('utf-8'),
                                file_name="bulk_ioc_results.csv", mime="text/csv")
 
