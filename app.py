@@ -308,6 +308,7 @@ def generate_pdf(report_data, evtx_df):
     pdf.add_page()
     pdf.set_auto_page_break(auto=True, margin=15)
     
+    # 1. Executive Summary
     pdf.set_font('Helvetica', 'B', 12)
     pdf.cell(0, 8, '1. Executive Summary', ln=True)
     pdf.set_font('Helvetica', '', 10)
@@ -315,8 +316,9 @@ def generate_pdf(report_data, evtx_df):
     pdf.multi_cell(0, 6, "Automated forensic summary compiling network intelligence, endpoint log telemetry, and MITRE ATT&CK mappings to guide triage and response decisions.")
     pdf.ln(4)
 
+    # 2. Direct Indicator Telemetry & Threat Intel
     pdf.set_font('Helvetica', 'B', 12)
-    pdf.cell(0, 8, '2. Direct Indicator Telemetry', ln=True)
+    pdf.cell(0, 8, '2. Direct Indicator Telemetry & Threat Context', ln=True)
     pdf.set_font('Helvetica', '', 10)
     if not report_data["single_iocs"]:
         pdf.cell(0, 6, "No direct indicators were queried.", ln=True)
@@ -325,10 +327,22 @@ def generate_pdf(report_data, evtx_df):
             pdf.set_font('Helvetica', 'B', 10)
             pdf.cell(0, 6, f"Target: {item['Indicator']} ({item['Type']})", ln=True)
             pdf.set_font('Helvetica', '', 10)
-            pdf.multi_cell(0, 6, f"Malicious Detections: {item['Malicious']} | Queried: {item['Timestamp']}")
+            
+            vt_hits = item.get('Malicious', 'N/A')
+            otx_count = item.get('OTX_Pulses', 0)
+            otx_camps = item.get('OTX_Campaigns', 'None')
+            
+            pdf.multi_cell(0, 6, f"VirusTotal Malicious Detections: {vt_hits}\nAlienVault OTX Associated Campaigns (Pulses): {otx_count}")
+            if otx_count > 0 and otx_camps != "None":
+                pdf.multi_cell(0, 6, f"Top Threat Campaigns: {otx_camps}")
+            
+            pdf.set_text_color(120, 120, 120)
+            pdf.cell(0, 6, f"Queried: {item['Timestamp']}", ln=True)
+            pdf.set_text_color(0, 0, 0)
             pdf.ln(2)
     pdf.ln(4)
 
+    # 3. Bulk Indicator Assessment
     pdf.set_font('Helvetica', 'B', 12)
     pdf.cell(0, 8, '3. Bulk Indicator Assessment', ln=True)
     pdf.set_font('Helvetica', '', 10)
@@ -340,23 +354,28 @@ def generate_pdf(report_data, evtx_df):
         pdf.cell(0, 6, f"Malicious Entities Flagged: {b_data['malicious_found']}", ln=True)
     pdf.ln(4)
 
+    # 4. Endpoint Telemetry & MITRE ATT&CK Mapping
     pdf.set_font('Helvetica', 'B', 12)
-    pdf.cell(0, 8, '4. Endpoint Telemetry & MITRE ATT&CK Mapping', ln=True)
+    pdf.cell(0, 8, '4. Endpoint Telemetry & MITRE ATT&CK Breakdown', ln=True)
     pdf.set_font('Helvetica', '', 10)
     if evtx_df is None:
         pdf.cell(0, 6, "No EVTX files were parsed.", ln=True)
     else:
         pdf.cell(0, 6, f"Total Processed Records: {len(evtx_df)}", ln=True)
+        pdf.ln(2)
         mitre_events = evtx_df[evtx_df["MITRE ATT&CK"] != "None"]
         if mitre_events.empty:
             pdf.cell(0, 6, "No specific ATT&CK tactics matched queried Event IDs.", ln=True)
         else:
+            pdf.set_font('Helvetica', 'I', 10)
             pdf.cell(0, 6, "Observed MITRE Tactics & Techniques:", ln=True)
+            pdf.set_font('Helvetica', '', 10)
             mitre_summary = mitre_events["MITRE ATT&CK"].value_counts()
             for tactic, count in mitre_summary.items():
-                pdf.multi_cell(0, 6, f"- {tactic}: {count} instance(s)")
+                pdf.multi_cell(0, 6, f"[*] {tactic} - {count} instance(s)")
     pdf.ln(4)
 
+    # 5. Prescribed Incident Response Actions
     pdf.set_font('Helvetica', 'B', 12)
     pdf.cell(0, 8, '5. Prescribed Incident Response Actions', ln=True)
     pdf.set_font('Helvetica', '', 10)
@@ -367,8 +386,7 @@ def generate_pdf(report_data, evtx_df):
         "- EDR Sweep: Hunt across all endpoints for hashes and artifacts discovered during this investigation."
     )
     pdf.multi_cell(0, 6, recs)
-    return pdf.output()
-
+    return pdf.output()  
 # ==============================================================================
 # 6. SESSION STATE INITIALIZATION
 # ==============================================================================
@@ -529,6 +547,24 @@ with tab1:
                 with st.spinner("Retrieving AlienVault OTX Context..."):
                     otx_data = query_alienvault_otx(otx_target, t_type, otx_key)
                     render_otx_results(otx_data)
+
+                    # --- 2. APPEND TO REPORT STATE ---
+            if vt_data:
+                # Safely extract OTX data if the API returned results
+                otx_pulses = 0
+                otx_camps = []
+                if 'otx_data' in locals() and otx_data and not otx_data.get("error"):
+                    otx_pulses = otx_data.get("pulse_count", 0)
+                    otx_camps = [p["name"] for p in otx_data.get("pulses", [])[:3]] # Grab top 3 campaigns
+
+                st.session_state.report_data["single_iocs"].append({
+                    "Indicator": target,
+                    "Type": t_type.upper(),
+                    "Malicious": vt_data.get("Malicious", "N/A"),
+                    "OTX_Pulses": otx_pulses,
+                    "OTX_Campaigns": ", ".join(otx_camps) if otx_camps else "None",
+                    "Timestamp": datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+                })
 
 # --- TAB 2: EVTX FORENSICS ---
 with tab2:
