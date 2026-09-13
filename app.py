@@ -218,9 +218,19 @@ def scan_urlscan_io(url, api_key):
     try:
         submit_url = "https://urlscan.io/api/v1/scan/"
         headers = {"API-Key": api_key, "Content-Type": "application/json"}
-        data = {"url": url, "visibility": "public"}
+        # Changed to 'unlisted' to avoid public quota restrictions on top domains
+        data = {"url": url, "visibility": "unlisted"} 
+        
         res = requests.post(submit_url, headers=headers, json=data, timeout=15)
-        res.raise_for_status()
+        
+        # Capture the EXACT error message from urlscan instead of a generic 400 error
+        if res.status_code != 200:
+            try:
+                error_msg = res.json().get("message", res.text)
+            except:
+                error_msg = res.text
+            return {"uuid": None, "report": None, "error": f"Code {res.status_code}: {error_msg}"}
+            
         result_data = res.json()
         return {"uuid": result_data.get("uuid"), "report": result_data.get("result"), "error": None}
     except Exception as e:
