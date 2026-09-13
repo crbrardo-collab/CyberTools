@@ -380,7 +380,7 @@ if 'report_data' not in st.session_state:
 # ==============================================================================
 # 7. USER INTERFACE & NAVIGATION
 # ==============================================================================
-st.title("🛡️ SOC Triage & Forensics Tool")
+st.title("🛡️ SOC Triage & Tool")
 
 # Hidden API Configuration pulled directly from Streamlit Secrets
 vt_key = st.secrets.get("VT_API_KEY", "")
@@ -390,8 +390,8 @@ otx_key = st.secrets.get("OTX_API_KEY", "")
 
 with st.sidebar:
     st.image("https://upload.wikimedia.org/wikipedia/commons/thumb/c/c2/GitHub_Invertocat_Logo.svg/120px-GitHub_Invertocat_Logo.svg.png", width=50)
-    st.markdown("### SOC Forensics")
-    st.caption("v1.2.0 | Production")
+    st.markdown("### SOC Tool")
+    st.caption("Test Version")
     st.divider()
     
     # Push the logout button to the bottom using empty space
