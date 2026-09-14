@@ -1,27 +1,32 @@
-import requests
-import time
-import random
-from datetime import datetime
 import os
+from datetime import datetime, timezone
+import random
+import time
+import requests
 from dotenv import load_dotenv
 
-# --- CONFIGURATION ---
-# Replace these with the exact URL and Publishable Key from your secrets.toml
+# Explicitly load .env from the current working directory
+load_dotenv()
+
 SUPABASE_URL = os.getenv("SUPABASE_URL")
 SUPABASE_KEY = os.getenv("SUPABASE_KEY")
 
-# The Supabase REST API endpoint for your specific table
-API_ENDPOINT = f"{SUPABASE_URL}/rest/v1/endpoint_logs"
+# Safety validation to catch missing .env files
+if not SUPABASE_URL or not SUPABASE_KEY:
+    raise ValueError(
+        "Missing Supabase credentials! Check that your .env file exists and contains SUPABASE_URL and SUPABASE_KEY."
+    )
 
-# Supabase requires both the apikey and Authorization headers for REST POSTs
+# Supabase REST API endpoint
+API_ENDPOINT = f"{SUPABASE_URL.rstrip('/')}/rest/v1/endpoint_logs"
+
 HEADERS = {
     "apikey": SUPABASE_KEY,
     "Authorization": f"Bearer {SUPABASE_KEY}",
     "Content-Type": "application/json",
-    "Prefer": "return=minimal" 
+    "Prefer": "return=minimal"
 }
 
-# --- SIMULATOR LOGIC ---
 EVENT_TYPES = [
     (4688, "Process Creation", {"process": "powershell.exe", "parent": "cmd.exe", "user": "SYSTEM"}),
     (4624, "Successful Logon", {"logon_type": 3, "ip_address": "192.168.1.15", "user": "Admin"}),
@@ -30,23 +35,19 @@ EVENT_TYPES = [
 ]
 
 def generate_telemetry():
-    print("🛡️ SOC Agent Started. Pushing telemetry to Supabase SIEM...")
+    print("SOC Agent Started. Pushing telemetry to Supabase SIEM...")
     while True:
-        # Pick a random Windows event to simulate live endpoint activity
         event_id, desc, details = random.choice(EVENT_TYPES)
         
         payload = {
             "hostname": "DESKTOP-SOC-01",
             "event_id": event_id,
-            "timestamp": datetime.utcnow().isoformat(),
+            "timestamp": datetime.now(timezone.utc).isoformat(),
             "details": details
         }
         
         try:
-            # POST the json directly to the database
             res = requests.post(API_ENDPOINT, headers=HEADERS, json=payload)
-            
-            # 201 Created is the standard HTTP success code for database inserts
             if res.status_code == 201:
                 print(f"[+] Successfully sent: EID {event_id} ({desc})")
             else:
@@ -54,7 +55,6 @@ def generate_telemetry():
         except Exception as e:
             print(f"[-] Connection failed: {e}")
             
-        # Wait 4 seconds before triggering the next event
         time.sleep(4)
 
 if __name__ == "__main__":
