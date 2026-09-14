@@ -11,11 +11,31 @@ import hashlib
 from datetime import datetime, timedelta
 from evtx import PyEvtxParser
 from fpdf import FPDF
+from supabase import create_client, Client
 
 # ==============================================================================
 # 1. PAGE CONFIGURATION & ACCESS CONTROL
 # ==============================================================================
 st.set_page_config(page_title="SOC Triage Tool", layout="wide")
+
+# Initialize Supabase Client immediately after
+@st.cache_resource
+def init_connection():
+    url = st.secrets["SUPABASE_URL"]
+    key = st.secrets["SUPABASE_KEY"]
+    return create_client(url, key)
+
+supabase = init_connection()
+
+# --- SIEM Helper Function ---
+def fetch_siem_logs():
+    try:
+        # Pull the latest 100 logs from your database table
+        response = supabase.table("endpoint_logs").select("*").order("created_at", desc=True).limit(100).execute()
+        return response.data
+    except Exception as e:
+        st.error(f"Database connection failed: {e}")
+        return []
 
 APP_PASSWORD = st.secrets["APP_PASSWORD"]
 
@@ -439,11 +459,12 @@ with st.sidebar:
         st.session_state["authenticated"] = False
         st.rerun()
 
-tab1, tab2, tab3, tab4 = st.tabs([
+tab1, tab2, tab3, tab4, tab5 = st.tabs([
     "🌐 Single IOC Intel", 
     "📂 EVTX Forensics", 
     "🗂️ Bulk IOC Analysis", 
     "📄 Incident Report"
+    "📡 Live SIEM Feed"
 ])
 
 # --- TAB 1: SINGLE IOC INTEL & FILE HASH GENERATOR ---
@@ -742,3 +763,30 @@ with tab4:
                 st.success("Report successfully generated.")
             except Exception as e:
                 st.error(f"Failed to generate report: {e}")
+
+    # --- TAB 5: LIVE SIEM FEED ---
+with tab5:
+    st.header("📡 Live Endpoint Telemetry")
+    st.write("Real-time event logs reported by deployed endpoint agents.")
+    
+    if st.button("🔄 Refresh Feed"):
+        st.rerun()
+        
+    logs = fetch_siem_logs()
+    
+    if not logs:
+        st.info("No logs found. Waiting for endpoint agents to report data...")
+    else:
+        # Convert JSON data into a standard dataframe for clean viewing
+        df_logs = pd.DataFrame(logs)
+        st.dataframe(
+            df_logs,
+            use_container_width=True,
+            hide_index=True,
+            column_config={
+                "created_at": st.column_config.DatetimeColumn("Timestamp", format="YYYY-MM-DD HH:mm:ss"),
+                "hostname": st.column_config.TextColumn("Endpoint", width="small"),
+                "event_id": st.column_config.NumberColumn("Event ID", format="%d"),
+                "details": st.column_config.TextColumn("Log Details", width="large")
+            }
+        )
