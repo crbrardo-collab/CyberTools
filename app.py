@@ -306,21 +306,17 @@ class PDFReport(FPDF):
 def generate_pdf(report_data, evtx_df):
     pdf = PDFReport()
     pdf.add_page()
-    # Increased bottom margin to prevent text cutoff near the footer
-    pdf.set_auto_page_break(auto=True, margin=20)
+    pdf.set_auto_page_break(auto=True, margin=15)
     
-    # --- 1. EXECUTIVE SUMMARY ---
+    # 1. Executive Summary
     pdf.set_font('Helvetica', 'B', 12)
-    pdf.set_text_color(20, 40, 80) # Professional dark blue accent
     pdf.cell(0, 8, '1. Executive Summary', ln=True)
-    pdf.set_text_color(0, 0, 0)
-    
     pdf.set_font('Helvetica', '', 10)
     pdf.cell(0, 6, f"Generated: {datetime.now().strftime('%Y-%m-%d %H:%M:%S PHT')}", ln=True)
     pdf.multi_cell(0, 6, "Automated forensic summary compiling network intelligence, endpoint log telemetry, and MITRE ATT&CK mappings to guide triage and response decisions.")
     pdf.ln(4)
 
-    # --- 2. DIRECT INDICATOR TELEMETRY ---
+   # 2. Direct Indicator Telemetry & Threat Context
     pdf.set_font('Helvetica', 'B', 12)
     pdf.set_text_color(20, 40, 80)
     pdf.cell(0, 8, '2. Direct Indicator Telemetry & Threat Context', ln=True)
@@ -351,12 +347,13 @@ def generate_pdf(report_data, evtx_df):
             otx_count = item.get('OTX_Pulses', 0)
             otx_camps = str(item.get('OTX_Campaigns', 'None'))
             
-            pdf.cell(0, 6, f"• VirusTotal Detections: {vt_hits} engine(s) flagged", ln=True)
-            pdf.cell(0, 6, f"• AlienVault OTX Pulses: {otx_count} associated campaign(s)", ln=True)
+            # Replaced unsupported bullet points with standard hyphens
+            pdf.cell(0, 6, f"- VirusTotal Detections: {vt_hits} engine(s) flagged", ln=True)
+            pdf.cell(0, 6, f"- AlienVault OTX Pulses: {otx_count} associated campaign(s)", ln=True)
             
             if otx_count > 0 and otx_camps != "None":
                 safe_camps = otx_camps.replace("-", " ")
-                pdf.multi_cell(0, 6, f"• Top Threat Campaigns: {safe_camps}")
+                pdf.multi_cell(0, 6, f"- Top Threat Campaigns: {safe_camps}")
             
             pdf.set_text_color(100, 100, 100)
             pdf.cell(0, 6, f"  Queried at: {item['Timestamp']}", ln=True)
@@ -364,11 +361,9 @@ def generate_pdf(report_data, evtx_df):
             pdf.ln(3)
     pdf.ln(2)
 
-    # --- 3. BULK INDICATOR ASSESSMENT ---
+    # 3. Bulk Indicator Assessment
     pdf.set_font('Helvetica', 'B', 12)
-    pdf.set_text_color(20, 40, 80)
     pdf.cell(0, 8, '3. Bulk Indicator Assessment', ln=True)
-    pdf.set_text_color(0, 0, 0)
     pdf.set_font('Helvetica', '', 10)
     if not report_data["bulk_summary"]:
         pdf.cell(0, 6, "No bulk processing executed.", ln=True)
@@ -378,11 +373,9 @@ def generate_pdf(report_data, evtx_df):
         pdf.cell(0, 6, f"Malicious Entities Flagged: {b_data['malicious_found']}", ln=True)
     pdf.ln(4)
 
-    # --- 4. ENDPOINT TELEMETRY ---
+    # 4. Endpoint Telemetry & MITRE ATT&CK Breakdown
     pdf.set_font('Helvetica', 'B', 12)
-    pdf.set_text_color(20, 40, 80)
     pdf.cell(0, 8, '4. Endpoint Telemetry & MITRE ATT&CK Breakdown', ln=True)
-    pdf.set_text_color(0, 0, 0)
     pdf.set_font('Helvetica', '', 10)
     if evtx_df is None:
         pdf.cell(0, 6, "No EVTX files were parsed.", ln=True)
@@ -398,14 +391,12 @@ def generate_pdf(report_data, evtx_df):
             pdf.set_font('Helvetica', '', 10)
             mitre_summary = mitre_events["MITRE ATT&CK"].value_counts()
             for tactic, count in mitre_summary.items():
-                pdf.multi_cell(0, 6, f" - {tactic}: {count} instance(s)")
+                pdf.multi_cell(0, 6, f"[*] {tactic} - {count} instance(s)")
     pdf.ln(4)
 
-    # --- 5. RESPONSE ACTIONS ---
+    # 5. Prescribed Incident Response Actions
     pdf.set_font('Helvetica', 'B', 12)
-    pdf.set_text_color(20, 40, 80)
     pdf.cell(0, 8, '5. Prescribed Incident Response Actions', ln=True)
-    pdf.set_text_color(0, 0, 0)
     pdf.set_font('Helvetica', '', 10)
     recs = (
         "- Perimeter Containment: Block malicious IPs/Domains on perimeter firewalls and sinkhole at DNS resolvers.\n"
@@ -414,7 +405,7 @@ def generate_pdf(report_data, evtx_df):
         "- EDR Sweep: Hunt across all endpoints for hashes and artifacts discovered during this investigation."
     )
     pdf.multi_cell(0, 6, recs)
-    return pdf.output()
+    return pdf.output()  
 # ==============================================================================
 # 6. SESSION STATE INITIALIZATION
 # ==============================================================================
