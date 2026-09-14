@@ -463,7 +463,7 @@ tab1, tab2, tab3, tab4, tab5 = st.tabs([
     "🌐 Single IOC Intel", 
     "📂 EVTX Forensics", 
     "🗂️ Bulk IOC Analysis", 
-    "📄 Incident Report"
+    "📄 Incident Report",
     "📡 Live SIEM Feed"
 ])
 
