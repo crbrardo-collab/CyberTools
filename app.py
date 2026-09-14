@@ -763,30 +763,3 @@ with tab4:
                 st.success("Report successfully generated.")
             except Exception as e:
                 st.error(f"Failed to generate report: {e}")
-
-    # --- TAB 5: LIVE SIEM FEED ---
-with tab5:
-    st.header("📡 Live Endpoint Telemetry")
-    st.write("Real-time event logs reported by deployed endpoint agents.")
-    
-    if st.button("🔄 Refresh Feed"):
-        st.rerun()
-        
-    logs = fetch_siem_logs()
-    
-    if not logs:
-        st.info("No logs found. Waiting for endpoint agents to report data...")
-    else:
-        # Convert JSON data into a standard dataframe for clean viewing
-        df_logs = pd.DataFrame(logs)
-        st.dataframe(
-            df_logs,
-            use_container_width=True,
-            hide_index=True,
-            column_config={
-                "created_at": st.column_config.DatetimeColumn("Timestamp", format="YYYY-MM-DD HH:mm:ss"),
-                "hostname": st.column_config.TextColumn("Endpoint", width="small"),
-                "event_id": st.column_config.NumberColumn("Event ID", format="%d"),
-                "details": st.column_config.TextColumn("Log Details", width="large")
-            }
-        )
