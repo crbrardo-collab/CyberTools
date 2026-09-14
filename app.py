@@ -15,7 +15,7 @@ from fpdf import FPDF
 # ==============================================================================
 # 1. PAGE CONFIGURATION & ACCESS CONTROL
 # ==============================================================================
-st.set_page_config(page_title="SOC Triage & Forensics Tool", layout="wide")
+st.set_page_config(page_title="SOC Triage Tool", layout="wide")
 
 APP_PASSWORD = st.secrets["APP_PASSWORD"]
 
@@ -24,7 +24,7 @@ if "authenticated" not in st.session_state:
 
 if not st.session_state["authenticated"]:
     st.title("🔒 Access Restricted")
-    st.write("Please authenticate to access the SOC Triage & Forensics Tool.")
+    st.write("Please authenticate to access the SOC Triage Tool.")
     pwd_input = st.text_input("Password", type="password")
     if st.button("Login"):
         if pwd_input == APP_PASSWORD:
