@@ -763,3 +763,20 @@ with tab4:
                 st.success("Report successfully generated.")
             except Exception as e:
                 st.error(f"Failed to generate report: {e}")
+
+    # --- TAB 5: LIVE SIEM FEED ---
+with tab5:
+    st.subheader("📡 Live Endpoint Telemetry")
+    st.write("Real-time event logs ingested directly from Supabase.")
+    
+    # Create a refresh button to trigger the database query
+    if st.button("🔄 Refresh Feed", key="refresh_siem"):
+        with st.spinner("Pulling latest telemetry..."):
+            logs = fetch_siem_logs()
+            
+            if logs:
+                # Convert the JSON response into a Pandas DataFrame for clean visualization
+                df = pd.DataFrame(logs)
+                st.dataframe(df, use_container_width=True)
+            else:
+                st.info("No logs found. Ensure your Python agent is actively running!")
