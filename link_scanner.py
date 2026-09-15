@@ -6,9 +6,6 @@ def process_bulk_csv(uploaded_file):
     # Read the CSV
     df = pd.read_csv(uploaded_file)
     
-    st.write("### Data Preview")
-    st.dataframe(df.head(5), use_container_width=True)
-
     # We know your exact column names from the screenshot, but we use a selectbox 
     # and default to them just in case the format ever changes slightly.
     col_names = list(df.columns)
@@ -16,6 +13,7 @@ def process_bulk_csv(uploaded_file):
     default_id = col_names.index("ID") if "ID" in col_names else 0
     default_target = col_names.index("Unusual / Suspicious web link in the spam / scam message") if "Unusual / Suspicious web link in the spam / scam message" in col_names else 0
 
+    st.markdown("#### Filter Settings")
     col1, col2 = st.columns(2)
     with col1:
         id_column = st.selectbox("Select ID Column:", col_names, index=default_id)
@@ -29,44 +27,43 @@ def process_bulk_csv(uploaded_file):
 
         # Step 1: Find the ID and skip everything before and including it
         if last_id.strip():
-            # Convert IDs to strings to ensure perfect matching
             filtered_df[id_column] = filtered_df[id_column].astype(str).str.strip()
             search_id = last_id.strip()
             
             if search_id in filtered_df[id_column].values:
-                # Find the row index of the exact ID match
                 match_index = filtered_df.index[filtered_df[id_column] == search_id].tolist()[0]
-                
-                # Slice the dataframe to keep ONLY rows AFTER the matched index
                 filtered_df = filtered_df.loc[match_index + 1:]
                 st.info(f"⏭️ Skipped up to ID {search_id}. Processing the remaining {len(filtered_df)} rows.")
             else:
                 st.warning(f"⚠️ ID {search_id} not found in the file. Processing all rows.")
 
-        # Step 2: Extract the links from the Target column
+        # Step 2: Extract the raw data from the Target column
         raw_data = filtered_df[target_column].dropna().astype(str).tolist()
+        
+        # RegEx pattern to identify domains (e.g., example.com) and URLs (e.g., https://example.com/path)
+        url_pattern = re.compile(r'(?:https?://)?(?:[a-zA-Z0-9-]+\.)+[a-zA-Z]{2,}(?:/[^\s]*)?')
         
         extracted_links = []
         for item in raw_data:
-            item = item.strip()
-            # Basic cleanup to ignore standard blanks from your screenshot
-            if item.lower() in ['n/a', 'na', 'none', '-', '']:
-                continue
+            # Find all domain/URL matches in the current cell's text
+            matches = url_pattern.findall(item)
             
-            # (Optional) You could add regex here in the future to strip out sentences 
-            # and keep ONLY URLs, but for now we grab the whole cell contents.
-            extracted_links.append(item)
+            for match in matches:
+                # Clean up any trailing punctuation that might get caught
+                clean_match = match.rstrip('.,!?"\'')
+                if clean_match:
+                    extracted_links.append(clean_match)
             
         if extracted_links:
-            st.success(f"✅ Successfully extracted {len(extracted_links)} items.")
+            st.success(f"✅ Successfully extracted {len(extracted_links)} isolated URLs/Domains.")
             
             with st.expander("View Extracted Links", expanded=True):
-                # Print them out one by one
+                # Print them out one by one cleanly
                 for link in extracted_links:
                     st.code(link)
                     
             return extracted_links
         else:
-            st.error("No data left to process after skipping.")
+            st.error("No valid links or domains found in the remaining data.")
             
     return None
