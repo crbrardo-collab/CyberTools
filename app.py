@@ -4,6 +4,7 @@ import os
 import re
 import requests
 import pandas as pd
+from link_scanner import process_bulk_csv
 import tempfile
 import time
 import socket
@@ -685,65 +686,83 @@ with tab2:
                            file_name="evtx_forensic_timeline.csv", mime="text/csv")
 
 # --- TAB 3: BULK IOC ANALYSIS ---
+# --- TAB 3: BULK IOC ANALYSIS ---
 with tab3:
-    st.info("Public VirusTotal API rate limit: 4 requests per minute.")
-    bulk_input = st.text_area("Paste indicators (one per line: IPs, Domains, URLs, Hashes)")
+    st.subheader("📁 Bulk IOC Analysis")
     
-    if st.button("Run Bulk Analysis"):
-        if not vt_key:
-            st.error("VirusTotal API Key is required.")
-        elif not bulk_input.strip():
-            st.warning("Provide at least one indicator.")
-        else:
-            iocs = [line.strip() for line in bulk_input.split('\n') if line.strip()]
-            results = []
-            malicious_count = 0
-            prog = st.progress(0)
-            status = st.empty()
-            
-            for index, ioc in enumerate(iocs):
-                status.text(f"Processing ({index + 1}/{len(iocs)}): {ioc}")
-                ioc_type = identify_input(ioc)
-                vt_data = query_virustotal(ioc, ioc_type, vt_key)
+    # Toggle switch to choose between pasting text or uploading a CSV
+    input_method = st.radio("Select Input Method:", ["Paste IOCs Manually", "Upload CSV File"], horizontal=True)
+    
+    if input_method == "Paste IOCs Manually":
+        # --- YOUR ORIGINAL CODE STARTS HERE ---
+        st.info("Public VirusTotal API rate limit: 4 requests per minute.")
+        bulk_input = st.text_area("Paste indicators (one per line: IPs, Domains, URLs, Hashes)")
+        
+        if st.button("Run Bulk Analysis"):
+            if not vt_key:
+                st.error("VirusTotal API Key is required.")
+            elif not bulk_input.strip():
+                st.warning("Provide at least one indicator.")
+            else:
+                iocs = [line.strip() for line in bulk_input.split('\n') if line.strip()]
+                results = []
+                malicious_count = 0
+                prog = st.progress(0)
+                status = st.empty()
                 
-                mal_val = vt_data.get("Malicious", 0)
-                if str(mal_val).isdigit() and int(mal_val) > 0:
-                    malicious_count += 1
-
-                results.append({
-                    "Indicator": ioc,
-                    "Type": ioc_type.upper(),
-                    "Malicious": mal_val,
-                    "Suspicious": vt_data.get("Suspicious", "-"),
-                    "Details": vt_data.get("Vendors", "-")
-                })
-                prog.progress((index + 1) / len(iocs))
-                if len(iocs) > 1 and index < len(iocs) - 1:
-                    time.sleep(2)
+                for index, ioc in enumerate(iocs):
+                    status.text(f"Processing ({index + 1}/{len(iocs)}): {ioc}")
+                    ioc_type = identify_input(ioc)
+                    vt_data = query_virustotal(ioc, ioc_type, vt_key)
                     
-            status.text("Bulk Analysis Completed.")
-            st.session_state.report_data["bulk_summary"] = {
-                "total_scanned": len(iocs),
-                "malicious_found": malicious_count
-            }
-            bulk_df = pd.DataFrame(results)
-            st.dataframe(
-                bulk_df,
-                use_container_width=True,
-                hide_index=True,
-                column_config={
-                    "Indicator": st.column_config.TextColumn("Target IOC", width="medium"),
-                    "Type": st.column_config.TextColumn("Type", width="small"),
-                    "Malicious": st.column_config.NumberColumn(
-                        "Malicious Hits", 
-                        help="Number of security vendors flagging this IOC",
-                        format="%d 🚨"
-                    ),
-                    "Suspicious": st.column_config.NumberColumn("Suspicious", format="%d ⚠️"),
+                    mal_val = vt_data.get("Malicious", 0)
+                    if str(mal_val).isdigit() and int(mal_val) > 0:
+                        malicious_count += 1
+
+                    results.append({
+                        "Indicator": ioc,
+                        "Type": ioc_type.upper(),
+                        "Malicious": mal_val,
+                        "Suspicious": vt_data.get("Suspicious", "-"),
+                        "Details": vt_data.get("Vendors", "-")
+                    })
+                    prog.progress((index + 1) / len(iocs))
+                    if len(iocs) > 1 and index < len(iocs) - 1:
+                        time.sleep(2)
+                        
+                status.text("Bulk Analysis Completed.")
+                st.session_state.report_data["bulk_summary"] = {
+                    "total_scanned": len(iocs),
+                    "malicious_found": malicious_count
                 }
-            )
-            st.download_button("⬇️ Download Bulk Report (.csv)", data=bulk_df.to_csv(index=False).encode('utf-8'),
-                               file_name="bulk_ioc_results.csv", mime="text/csv")
+                bulk_df = pd.DataFrame(results)
+                st.dataframe(
+                    bulk_df,
+                    use_container_width=True,
+                    hide_index=True,
+                    column_config={
+                        "Indicator": st.column_config.TextColumn("Target IOC", width="medium"),
+                        "Type": st.column_config.TextColumn("Type", width="small"),
+                        "Malicious": st.column_config.NumberColumn(
+                            "Malicious Hits", 
+                            help="Number of security vendors flagging this IOC",
+                            format="%d 🚨"
+                        ),
+                        "Suspicious": st.column_config.NumberColumn("Suspicious", format="%d ⚠️"),
+                    }
+                )
+                st.download_button("⬇️ Download Bulk Report (.csv)", data=bulk_df.to_csv(index=False).encode('utf-8'),
+                                   file_name="bulk_ioc_results.csv", mime="text/csv")
+        # --- YOUR ORIGINAL CODE ENDS HERE ---
+
+    elif input_method == "Upload CSV File":
+        # --- THE NEW CSV CONNECTION STARTS HERE ---
+        st.write("Upload a CSV file to extract malicious URLs or IPs.")
+        uploaded_csv = st.file_uploader("Upload CSV File", type=["csv"], key="bulk_csv")
+        
+        if uploaded_csv is not None:
+            # Calls the function from link_scanner.py
+            extracted_links = process_bulk_csv(uploaded_csv)
 
 # --- TAB 4: INCIDENT REPORT GENERATION ---
 with tab4:
